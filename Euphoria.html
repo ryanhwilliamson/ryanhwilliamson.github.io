@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Variable Font → Audio Controlled</title>
+  <style>
+    @font-face {
+      font-family: 'MyVariableFont';
+      src: url('https://ryanhwilliamson.github.io/F37Euphoria-VF.woff2') format('woff2');
+      font-style: normal;
+    }
+
+    :root{
+      --sctr: 50;
+      --size: 50;
+    }
+
+    body{
+      font-family: 'MyVariableFont', system-ui, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      color: #fff;
+    }
+
+    .big-text{
+      margin:0;
+      font-size: clamp(2rem, 12vw, 8rem);
+      text-align:center;
+      font-variation-settings: 'SCTR' var(--sctr), 'SIZE' var(--size);
+      transition: font-variation-settings .02s linear;
+    }
+  </style>
+</head>
+<body>
+  <p class="big-text" id="demoText">Tall Paul</p>
+
+<script>
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a,b,t) => a + (b-a)*t;
+
+  let audioCtx = null;
+  let analyser = null;
+  let mediaStream = null;
+  let sourceNode = null;
+  let dataArray = null;
+  let rafId = null;
+  let smoothedSctr = 50, smoothedSize = 50;
+
+  const AXIS_MIN = 0;
+  const AXIS_MAX = 100;
+
+  function audioToAxis(val){
+    const normalized = clamp(val / 255, 0, 1);
+    // increase sensitivity by 50%
+    const shaped = Math.pow(normalized, 1 / 1.5);
+    return Math.round(AXIS_MIN + (AXIS_MAX - AXIS_MIN) * shaped);
+  }
+
+  function applyAxes(sctr, size){
+    smoothedSctr = lerp(smoothedSctr, sctr, 0.3);
+    smoothedSize = lerp(smoothedSize, size, 0.3);
+    document.documentElement.style.setProperty('--sctr', Math.round(smoothedSctr));
+    document.documentElement.style.setProperty('--size', Math.round(smoothedSize));
+    document.getElementById('demoText').style.fontVariationSettings = `'SCTR' ${Math.round(smoothedSctr)}, 'SIZE' ${Math.round(smoothedSize)}`;
+  }
+
+  function animate(){
+    if(!analyser) return;
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for(let i=0;i<dataArray.length;i++) sum += dataArray[i];
+    const value = dataArray.length ? sum / dataArray.length : 0;
+    const axisVal = audioToAxis(value);
+    applyAxes(axisVal, axisVal);
+    rafId = requestAnimationFrame(animate);
+  }
+
+  async function init(){
+    try{
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      sourceNode.connect(analyser);
+      animate();
+    }catch(err){
+      console.error('Microphone access failed:', err);
+    }
+  }
+
+  init();
+
+  // Cycle text content every 10 seconds
+  const words = ["Tall Paul", "Seb Fontaine", "Rick Banks", "Tom Duncalf"];
+  let wordIndex = 0;
+  setInterval(()=>{
+    wordIndex = (wordIndex + 1) % words.length;
+    document.getElementById('demoText').textContent = words[wordIndex];
+  }, 10000);
+</script>
+</body>
+</html>
